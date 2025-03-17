@@ -3,6 +3,8 @@ package com.github.senocak.controller
 import com.github.senocak.logger
 import com.github.senocak.model.TrafficDensity
 import com.github.senocak.model.TrafficDensityRepository
+import com.redislabs.lettusearch.StatefulRediSearchConnection
+import jakarta.annotation.PostConstruct
 import org.slf4j.Logger
 import org.springframework.batch.core.Job
 import org.springframework.batch.core.JobExecution
@@ -23,11 +25,15 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import redis.clients.jedis.JedisPool
+import redis.clients.jedis.JedisPooled
+import redis.clients.jedis.search.Document
 import redis.clients.jedis.search.FTCreateParams
 import redis.clients.jedis.search.IndexDefinition
 import redis.clients.jedis.search.IndexOptions
+import redis.clients.jedis.search.Query
 import redis.clients.jedis.search.RediSearchCommands
 import redis.clients.jedis.search.Schema
+import redis.clients.jedis.search.SearchResult
 import java.io.IOException
 import java.util.UUID
 import kotlin.time.Duration
@@ -39,12 +45,14 @@ class BatchController(
     private val jobLauncher: JobLauncher,
     private val importVehicleCountJob: Job,
     private val trafficDensityRepository: TrafficDensityRepository,
-    private val jedisPool: JedisPool,
+    private val jedisPool: JedisPooled,
     private val redisTemplate: RedisTemplate<String, Any>,
+    //private val searchConnection: StatefulRediSearchConnection<String, String>,
 ) {
     private val log: Logger by logger()
     private val opsForHash: HashOperations<String, String, Any> = redisTemplate.opsForHash()
     private val opsForSet: SetOperations<String, Any> = redisTemplate.opsForSet()
+    private val rediSearch: RediSearchCommands = jedisPool as RediSearchCommands
 
     @PostMapping("/run")
     fun run(@RequestParam csvName: String): String {
@@ -141,35 +149,94 @@ class BatchController(
         )
     }
 
-    private val INDEX_CUSTOMER = "idx_cust"
+    private val INDEX_TRAFFIC_DENSITY = "idx_traffic_density"
 
+    @GetMapping("/search")
+    fun search(
+        @RequestParam(required = false) latitude: String? = null,
+        @RequestParam(required = false) longitude: String? = null,
+        @RequestParam(defaultValue = "10") limit: Int = 10,
+        @RequestParam(defaultValue = "0") offset: Int = 0
+    ): Map<String, Any> {
+        val queryBuilder = StringBuilder()
+        when {
+            !latitude.isNullOrBlank() || !longitude.isNullOrBlank() -> {
+                if (!latitude.isNullOrBlank())
+                    queryBuilder.append("@latitude:{$latitude}")
+                if (!longitude.isNullOrBlank()) {
+                    if (queryBuilder.isNotEmpty())
+                        queryBuilder.append(" ")
+                    queryBuilder.append("@longitude:{$longitude}")
+                }
+            }
+            else -> queryBuilder.append("*") // If neither is provided, default to "*"
+        }
+        val queryString: String = queryBuilder.toString()
+        // Create query
+        val query: Query = Query(queryString)
+            .limit(offset, limit)
+            .setWithScores()
+        // Execute search
+        var searchDuration: Duration = Duration.ZERO
+        var searchResults: List<TrafficDensity> = emptyList()
+        var totalResults: Long = 0
+        try {
+            val searchResult: SearchResult
+            searchDuration = measureTime {
+                searchResult = rediSearch.ftSearch(INDEX_TRAFFIC_DENSITY, query)
+            }
+            totalResults = searchResult.totalResults
+            if (totalResults > 0) {
+                searchResults = searchResult.documents.map { doc: Document ->
+                    val properties: MutableIterable<MutableMap.MutableEntry<String, Any>> = doc.properties
+                    TrafficDensity(
+                        id = UUID.fromString(properties.firstOrNull { it.key == "id" }?.value as? String ?: UUID.randomUUID().toString()),
+                        dateTime = doc.get("dateTime") as String,
+                        latitude = properties.firstOrNull { it.key == "latitude" }?.value as? String ?: "",
+                        longitude = properties.firstOrNull { it.key == "longitude" }?.value as? String ?: "",
+                        geohash = properties.firstOrNull { it.key == "geohash" }?.value as? String ?: "",
+                        minimumSpeed = (properties.firstOrNull { it.key == "minimumSpeed" }?.value as? String)?.toIntOrNull() ?: 0,
+                        maximumSpeed = (properties.firstOrNull { it.key == "maximumSpeed" }?.value as? String)?.toIntOrNull() ?: 0,
+                        averageSpeed = (properties.firstOrNull { it.key == "averageSpeed" }?.value as? String)?.toIntOrNull() ?: 0,
+                        numberOfVehicles = (properties.firstOrNull { it.key == "numberOfVehicles" }?.value as? String)?.toIntOrNull() ?: 0
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            log.error("Error executing search: ${e.localizedMessage}")
+        }
+        return mapOf(
+            "searchDuration" to searchDuration.inWholeMilliseconds,
+            "query" to queryString,
+            "total" to totalResults,
+            "results" to searchResults
+        )
+    }
+
+    @PostConstruct
     fun initializeIndex(): Long {
-        val rediSearch: RediSearchCommands = jedisPool as RediSearchCommands
-        // create index if it doesn't exist
-        if (!rediSearch.ftList().contains(INDEX_CUSTOMER)) {
-            // Disable stopwords so we can search for people with the name "An"
-            // FT.CREATE idx_cust PREFIX 1 "cust:" STOPWORDS 0 SCHEMA "First Name" AS firstname TEXT NOSTEM "Last Name" AS lastname TEXT NOSTEM "CIF" AS cif TAG
-            // "Credit card 1" as "cc1" TAG "Credit card 2" as "cc2" TAG
+        // Create traffic density index if it doesn't exist
+        if (!rediSearch.ftList().contains(INDEX_TRAFFIC_DENSITY)) {
             val params: FTCreateParams = FTCreateParams.createParams()
-            params.addPrefix("cust:")
-
-            val firstName = Schema.TextField("First name", 2.0, false, true) // no stemming
-            val lastName = Schema.TextField("Last name", 2.0, false, true) // no stemming
+            params.addPrefix("traffic_density:")
 
             val sc: Schema = Schema()
-                .addField(firstName).`as`("firstname")
-                .addField(lastName).`as`("lastname")
-                .addTagField("CIF").`as`("cif")
-                .addTagField("Credit card 1").`as`("cc1")
-                .addTagField("Credit card 2").`as`("cc2")
-                .addNumericField("Registration date epoch").`as`("regdate")
+                .addTextField("dateTime", 1.0)
+                .addTagField("latitude")
+                .addTagField("longitude")
+                .addTextField("geohash", 1.0)
+                .addNumericField("minimumSpeed")
+                .addNumericField("maximumSpeed")
+                .addNumericField("averageSpeed")
+                .addNumericField("numberOfVehicles")
 
-            val def: IndexDefinition = IndexDefinition().setPrefixes("cust:")
+            val def: IndexDefinition = IndexDefinition().setPrefixes("traffic_density:")
 
             val opt: IndexOptions = IndexOptions.defaultOptions()
             opt.setNoStopwords()
 
-            rediSearch.ftCreate(INDEX_CUSTOMER, opt.setDefinition(def), sc)
+            rediSearch.ftCreate(INDEX_TRAFFIC_DENSITY, opt.setDefinition(def), sc)
+            log.info("Created traffic density index")
         }
 
         return 0

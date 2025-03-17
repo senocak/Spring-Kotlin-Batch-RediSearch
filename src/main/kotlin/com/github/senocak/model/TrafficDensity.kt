@@ -18,7 +18,7 @@ data class TrafficDensity(
     val id: UUID? = UUID.randomUUID(),
     val dateTime: String,
     @Column(name = "latitude", nullable = false, updatable = false) @Indexed val latitude: String,
-    @Column(name = "latitude", nullable = false, updatable = false) @Indexed val longitude: String,
+    @Column(name = "longitude", nullable = false, updatable = false) @Indexed val longitude: String,
     val geohash: String,
     val minimumSpeed: Int,
     val maximumSpeed: Int,
@@ -31,4 +31,3 @@ interface TrafficDensityRepository : KeyValueRepository<TrafficDensity, UUID> {
     fun findAllByLongitude(longitude: String): List<TrafficDensity>
     fun findAllByLatitudeAndLongitude(latitude: String, longitude: String): List<TrafficDensity>
 }
-

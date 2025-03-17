@@ -3,3 +3,10 @@ POST http://localhost:8099/api/batch/traffic-density/run?csvName=./traffic_densi
 
 ### Get all job executions
 GET http://localhost:8099/api/batch/traffic-density
+
+### Search traffic density data with filters
+GET http://localhost:8099/api/batch/traffic-density/search
+    ?latitude=41.1465454101563
+    &longitude=29.4818115234375
+    &limit=100
+    &offset=0

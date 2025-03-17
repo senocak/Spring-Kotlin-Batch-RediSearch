@@ -32,7 +32,7 @@ spring:
       dialect: postgresql
     redis:
       HOST: ${REDIS_HOST:localhost}
-      PORT: ${REDIS_PORT:6379}
+      PORT: ${REDIS_PORT:6382}
       PASSWORD: ${REDIS_PASSWORD:}
       TIMEOUT: ${REDIS_TIMEOUT:300}
   batch:
