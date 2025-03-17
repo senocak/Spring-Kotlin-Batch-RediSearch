@@ -31,6 +31,11 @@ spring:
     jdbc:
       dialect: postgresql
     redis:
+#      cluster:
+#        nodes:
+#          - localhost:6379
+#          - localhost:6380
+#          - localhost:6381
       HOST: ${REDIS_HOST:localhost}
       PORT: ${REDIS_PORT:6382}
       PASSWORD: ${REDIS_PASSWORD:}

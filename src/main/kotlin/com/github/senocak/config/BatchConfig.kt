@@ -75,11 +75,11 @@ class BatchConfig(
     @Bean
     fun importTrafficDensityStep(): Step =
         StepBuilder("importTrafficDensityStep", jobRepository)
-            .chunk<TrafficDensity, TrafficDensity>(10_000, transactionManager)
+            .chunk<TrafficDensity, TrafficDensity>(1_000, transactionManager)
             .reader(reader(path = null)) // null path just for type resolution
             .processor { it: TrafficDensity -> it }
             .writer { list: Chunk<out TrafficDensity> ->
-                if (redisTemplate.keys("traffic_density:*").size < 10_000) {
+                if (redisTemplate.keys("traffic_density:*").size < 1_000) {
                     val listKeys = arrayListOf<String>()
                     list.forEach { it: TrafficDensity ->
                         val entityKey = "traffic_density:${it.id}"

@@ -44,16 +44,19 @@ class RedisConfig(
         return LettuceConnectionFactory(redisStandaloneConfiguration)
     }
 
-//    @Bean
-//    fun redisConnectionFactory(): RedisConnectionFactory =
-//        LettuceConnectionFactory(RedisClusterConfiguration()
-//            .also { it: RedisClusterConfiguration ->
-//                it.clusterNode(RedisNode(redisProperties.host, redisProperties.port))
-//                it.password = when {
-//                    redisProperties.password.isNullOrEmpty() -> RedisPassword.none()
-//                    else -> RedisPassword.of(redisProperties.password)
-//                }
-//            })
+    //@Bean
+    fun redisConnectionFactory(): RedisConnectionFactory =
+        LettuceConnectionFactory(RedisClusterConfiguration()
+            .also { it: RedisClusterConfiguration ->
+                redisProperties.cluster.nodes.forEach { node: String ->
+                    it.clusterNode(RedisNode.fromString(node))
+                }
+                it.password = when {
+                    redisProperties.password.isNullOrEmpty() -> RedisPassword.none()
+                    else -> RedisPassword.of(redisProperties.password)
+                }
+                it.maxRedirects = 3
+            })
 
     @Bean
     fun redisTemplate(redisConnectionFactory: RedisConnectionFactory): RedisTemplate<String, Any> =

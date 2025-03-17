@@ -3,7 +3,6 @@ package com.github.senocak.controller
 import com.github.senocak.logger
 import com.github.senocak.model.TrafficDensity
 import com.github.senocak.model.TrafficDensityRepository
-import com.redislabs.lettusearch.StatefulRediSearchConnection
 import jakarta.annotation.PostConstruct
 import org.slf4j.Logger
 import org.springframework.batch.core.Job
@@ -24,7 +23,6 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
-import redis.clients.jedis.JedisPool
 import redis.clients.jedis.JedisPooled
 import redis.clients.jedis.search.Document
 import redis.clients.jedis.search.FTCreateParams
@@ -47,7 +45,6 @@ class BatchController(
     private val trafficDensityRepository: TrafficDensityRepository,
     private val jedisPool: JedisPooled,
     private val redisTemplate: RedisTemplate<String, Any>,
-    //private val searchConnection: StatefulRediSearchConnection<String, String>,
 ) {
     private val log: Logger by logger()
     private val opsForHash: HashOperations<String, String, Any> = redisTemplate.opsForHash()
@@ -161,12 +158,14 @@ class BatchController(
         val queryBuilder = StringBuilder()
         when {
             !latitude.isNullOrBlank() || !longitude.isNullOrBlank() -> {
-                if (!latitude.isNullOrBlank())
-                    queryBuilder.append("@latitude:{$latitude}")
+                if (!latitude.isNullOrBlank()) {
+                    queryBuilder.append("@latitude:*${latitude}*") // Use wildcard for partial match
+                }
                 if (!longitude.isNullOrBlank()) {
-                    if (queryBuilder.isNotEmpty())
+                    if (queryBuilder.isNotEmpty()) {
                         queryBuilder.append(" ")
-                    queryBuilder.append("@longitude:{$longitude}")
+                    }
+                    queryBuilder.append("@longitude:*${longitude}*") // Use wildcard for partial match
                 }
             }
             else -> queryBuilder.append("*") // If neither is provided, default to "*"
@@ -176,6 +175,7 @@ class BatchController(
         val query: Query = Query(queryString)
             .limit(offset, limit)
             .setWithScores()
+            .returnFields("id", "dateTime", "latitude", "longitude", "geohash", "minimumSpeed", "maximumSpeed", "averageSpeed", "numberOfVehicles")
         // Execute search
         var searchDuration: Duration = Duration.ZERO
         var searchResults: List<TrafficDensity> = emptyList()
@@ -214,31 +214,29 @@ class BatchController(
     }
 
     @PostConstruct
-    fun initializeIndex(): Long {
+    fun initializeIndex() {
+        try {
+            rediSearch.ftDropIndex(INDEX_TRAFFIC_DENSITY) // Drop the existing index
+        } catch (e: Exception) {
+            log.warn("Error dropping index: ${e.localizedMessage}")
+        }
         // Create traffic density index if it doesn't exist
         if (!rediSearch.ftList().contains(INDEX_TRAFFIC_DENSITY)) {
-            val params: FTCreateParams = FTCreateParams.createParams()
-            params.addPrefix("traffic_density:")
-
+            val params: FTCreateParams = FTCreateParams.createParams().addPrefix("traffic_density:")
             val sc: Schema = Schema()
+                .addTagField("id")
                 .addTextField("dateTime", 1.0)
-                .addTagField("latitude")
-                .addTagField("longitude")
+                .addTextField("latitude", 1.0)
+                .addTextField("longitude", 1.0)
                 .addTextField("geohash", 1.0)
                 .addNumericField("minimumSpeed")
                 .addNumericField("maximumSpeed")
                 .addNumericField("averageSpeed")
                 .addNumericField("numberOfVehicles")
-
             val def: IndexDefinition = IndexDefinition().setPrefixes("traffic_density:")
-
-            val opt: IndexOptions = IndexOptions.defaultOptions()
-            opt.setNoStopwords()
-
+            val opt: IndexOptions = IndexOptions.defaultOptions().setNoStopwords()
             rediSearch.ftCreate(INDEX_TRAFFIC_DENSITY, opt.setDefinition(def), sc)
             log.info("Created traffic density index")
         }
-
-        return 0
     }
 }
