@@ -1,0 +1,5 @@
+### Run batch job with specified CSV file
+POST http://localhost:8099/api/batch/traffic-density/run?csvName=./traffic_density_202412.csv
+
+### Get all job executions
+GET http://localhost:8099/api/batch/traffic-density
