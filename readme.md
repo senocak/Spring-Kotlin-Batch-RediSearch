@@ -1,36 +1,50 @@
-# Spring Kotlin Batch
+# Spring Kotlin Batch RediSearch
 
-A Spring Boot application written in Kotlin that processes traffic density data using Spring Batch. The application downloads CSV files containing traffic density information and processes them in batches.
+A Spring Boot application written in Kotlin that processes traffic density data using Spring Batch and stores it in Redis. The application processes CSV files containing traffic density information in batches and provides search capabilities using Redis Search.
 
 ## Technologies Used
 
 - Kotlin 1.9.25
 - Spring Boot 3.4.3
 - Spring Batch
+- Spring Data Redis
+- Redis Stack (with Redis Search)
 - Spring Data JPA
-- PostgreSQL
+- PostgreSQL (for Spring Batch metadata)
 - Gradle
 - Java 21
 
 ## Prerequisites
 
 - JDK 21
-- PostgreSQL database
+- Redis Stack (or Redis with RediSearch module)
+- PostgreSQL database (for Spring Batch metadata)
 - Gradle (wrapper included)
+- Docker and Docker Compose (optional, for running Redis)
 
 ## Installation
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/senocak/Spring-Kotlin-Batch.git
-   cd Spring-Kotlin-Batch
+   git clone https://github.com/senocak/Spring-Kotlin-Batch-Redis.git
+   cd Spring-Kotlin-Batch-Redis
    ```
 
-2. Configure the database:
-   - Create a PostgreSQL database
+2. Start Redis using Docker Compose:
+   ```bash
+   docker-compose up -d redis-stack-single
+   ```
+
+   Alternatively, to run a Redis cluster:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. Configure the database:
+   - Create a PostgreSQL database for Spring Batch metadata
    - Update the database configuration in `application.yml` if needed (default values provided)
 
-3. Build the project:
+4. Build the project:
    ```bash
    ./gradlew build
    ```
@@ -40,98 +54,83 @@ A Spring Boot application written in Kotlin that processes traffic density data 
 The application can be configured through `application.yml` or environment variables:
 
 ```yaml
+# PostgreSQL Configuration (for Spring Batch metadata)
 SERVER_IP: localhost (default)
 POSTGRESQL_PORT: 54321 (default)
 POSTGRESQL_DB: batch (default)
 POSTGRESQL_SCHEMA: public (default)
 POSTGRESQL_USER: postgres (default)
 POSTGRESQL_PASSWORD: senocak (default)
+
+# Redis Configuration
+REDIS_HOST: localhost (default)
+REDIS_PORT: 6382 (default)
+REDIS_PASSWORD: (empty by default)
+REDIS_TIMEOUT: 300 (default)
 ```
 
 Additional configuration options:
-- Server port: 8089
+- Server port: 8099
 - Hikari connection pool settings
 - JPA/Hibernate configuration
 - Spring Batch settings
+- Redis cluster configuration (commented out by default)
 
 ## Usage
 
 ### API Endpoints
 
-1. Download Traffic Density Data:
-```http
-POST /api/batch/traffic-density/download
-```
-Parameters:
-- `url` (optional): URL of the CSV file to download
-  - Default: IBB traffic density data
-
-2. Run Batch Job:
+1. Run Batch Job:
 ```http
 POST /api/batch/traffic-density/run
 ```
 Parameters:
 - `csvName`: Name of the CSV file to process
 
-3. Get All Job Executions:
+2. Get Redis Data Information:
 ```http
-GET /api/batch/traffic-density/jobs
+GET /api/batch/traffic-density
 ```
-Returns a list of all job executions with their details.
+Returns information about the Redis data store, including keys, data types, and statistics.
 
-4. Get Running Job Executions:
+3. Search Traffic Density Data:
 ```http
-GET /api/batch/traffic-density/jobs/running
-```
-Returns a list of currently running job executions.
-
-5. Stop Job Execution:
-```http
-POST /api/batch/traffic-density/jobs/{executionId}/stop
+GET /api/batch/traffic-density/search
 ```
 Parameters:
-- `executionId`: ID of the job execution to stop
+- `latitude` (optional): Filter by latitude
+- `longitude` (optional): Filter by longitude
+- `limit` (optional, default: 10): Number of results to return
+- `offset` (optional, default: 0): Offset for pagination
 
 ### Example Usage
 
-1. Download traffic density data:
+1. Run the batch job:
 ```bash
-curl -X POST "http://localhost:8089/api/batch/traffic-density/download"
+curl -X POST "http://localhost:8099/api/batch/traffic-density/run?csvName=./traffic_density_202412.csv"
 ```
 
-2. Run the batch job:
+2. Get Redis data information:
 ```bash
-curl -X POST "http://localhost:8089/api/batch/traffic-density/run?csvName=traffic_density_2024.02.20.10.30.00.csv"
+curl -X GET "http://localhost:8099/api/batch/traffic-density"
 ```
 
-3. Get all job executions:
+3. Search traffic density data:
 ```bash
-curl -X GET "http://localhost:8089/api/batch/traffic-density/jobs"
-```
-
-4. Get running job executions:
-```bash
-curl -X GET "http://localhost:8089/api/batch/traffic-density/jobs/running"
-```
-
-5. Stop a job execution:
-```bash
-curl -X POST "http://localhost:8089/api/batch/traffic-density/jobs/1/stop"
+curl -X GET "http://localhost:8099/api/batch/traffic-density/search?latitude=41&longitude=28&limit=100&offset=0"
 ```
 
 ## Features
 
-- Asynchronous file download with progress tracking
 - Batch processing of traffic density data
-- Database storage of processed data
+- Redis storage with efficient data structures
+- Redis Search for fast querying of traffic density data
+- Secondary indexes for latitude and longitude
 - RESTful API endpoints
-- Configurable database connection
+- Configurable Redis and PostgreSQL connections
+- Support for both standalone Redis and Redis Cluster
 - Robust error handling
-- Comprehensive job management:
-  - Job execution monitoring
-  - Running jobs tracking
-  - Job execution control (stop/restart)
-  - Detailed job execution history
+- Performance metrics for search operations
 
 ## Reference Documentation
 
@@ -140,6 +139,9 @@ For further reference, please consider the following sections:
 * [Official Gradle documentation](https://docs.gradle.org)
 * [Spring Boot Gradle Plugin Reference Guide](https://docs.spring.io/spring-boot/3.4.3/gradle-plugin)
 * [Spring Batch](https://docs.spring.io/spring-boot/3.4.3/how-to/batch.html)
+* [Spring Data Redis](https://docs.spring.io/spring-boot/3.4.3/reference/data/nosql.html#data.nosql.redis)
+* [Redis Stack Documentation](https://redis.io/docs/stack/)
+* [Redis Search Documentation](https://redis.io/docs/stack/search/)
 * [Spring Data JPA](https://docs.spring.io/spring-boot/3.4.3/reference/data/sql.html#data.sql.jpa-and-spring-data)
 * [Spring Web](https://docs.spring.io/spring-boot/3.4.3/reference/web/servlet.html)
 

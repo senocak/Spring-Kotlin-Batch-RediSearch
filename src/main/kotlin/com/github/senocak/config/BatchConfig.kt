@@ -24,13 +24,8 @@ import org.springframework.core.io.FileSystemResource
 import org.springframework.data.redis.core.HashOperations
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.core.SetOperations
-import org.springframework.http.client.SimpleClientHttpRequestFactory
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor
 import org.springframework.transaction.PlatformTransactionManager
-import org.springframework.web.client.RestTemplate
-import java.time.Duration
 import java.util.Date
-import java.util.UUID
 
 @Configuration
 class BatchConfig(
@@ -41,12 +36,6 @@ class BatchConfig(
 ) {
     private val hashOperations: HashOperations<String, String, Any> = redisTemplate.opsForHash<String, Any>()
     private val setOperations: SetOperations<String, Any> = redisTemplate.opsForSet()
-//    @Bean
-//    fun writer(): RedisItemWriter<String, TrafficDensity> =
-//        RedisItemWriterBuilder<String, TrafficDensity>()
-//            .redisTemplate(redisTemplate)
-//            .itemKeyMapper { any: TrafficDensity -> any.id.toString() }
-//            .build()
 
     @Bean
     @StepScope
@@ -80,7 +69,6 @@ class BatchConfig(
             .processor { it: TrafficDensity -> it }
             .writer { list: Chunk<out TrafficDensity> ->
                 if (redisTemplate.keys("traffic_density:*").size < 1_000) {
-                    val listKeys = arrayListOf<String>()
                     list.forEach { it: TrafficDensity ->
                         val entityKey = "traffic_density:${it.id}"
                         val entityMap: Map<String, String> = mapOf(
@@ -127,22 +115,4 @@ class BatchConfig(
                 }
             })
             .build()
-
-    @Bean
-    fun restTemplate(): RestTemplate {
-        val factory = SimpleClientHttpRequestFactory()
-        factory.setChunkSize(8192)
-        factory.setConnectTimeout(Duration.ofMinutes(5))
-        factory.setReadTimeout(Duration.ofMinutes(5))
-        return RestTemplate(factory)
-    }
-
-    @Bean
-    fun taskExecutor(): ThreadPoolTaskExecutor =
-        ThreadPoolTaskExecutor().apply {
-            corePoolSize = 5
-            maxPoolSize = 10
-            queueCapacity = 25
-            initialize()
-        }
 }

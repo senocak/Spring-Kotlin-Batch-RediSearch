@@ -158,13 +158,11 @@ class BatchController(
         val queryBuilder = StringBuilder()
         when {
             !latitude.isNullOrBlank() || !longitude.isNullOrBlank() -> {
-                if (!latitude.isNullOrBlank()) {
+                if (!latitude.isNullOrBlank())
                     queryBuilder.append("@latitude:*${latitude}*") // Use wildcard for partial match
-                }
                 if (!longitude.isNullOrBlank()) {
-                    if (queryBuilder.isNotEmpty()) {
+                    if (queryBuilder.isNotEmpty())
                         queryBuilder.append(" ")
-                    }
                     queryBuilder.append("@longitude:*${longitude}*") // Use wildcard for partial match
                 }
             }
