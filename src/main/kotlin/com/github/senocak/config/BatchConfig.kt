@@ -77,6 +77,7 @@ class BatchConfig(
                             "latitude" to it.latitude,
                             "longitude" to it.longitude,
                             "geohash" to it.geohash,
+                            "location" to "${it.longitude} ${it.latitude}",
                             "minimumSpeed" to it.minimumSpeed.toString(),
                             "maximumSpeed" to it.maximumSpeed.toString(),
                             "averageSpeed" to it.averageSpeed.toString(),

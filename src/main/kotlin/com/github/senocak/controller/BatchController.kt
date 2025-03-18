@@ -32,6 +32,11 @@ import redis.clients.jedis.search.Query
 import redis.clients.jedis.search.RediSearchCommands
 import redis.clients.jedis.search.Schema
 import redis.clients.jedis.search.SearchResult
+import redis.clients.jedis.search.aggr.AggregationBuilder
+import redis.clients.jedis.search.aggr.AggregationResult
+import redis.clients.jedis.search.aggr.Group
+import redis.clients.jedis.search.aggr.Reducers
+import redis.clients.jedis.search.aggr.SortedField
 import java.io.IOException
 import java.util.UUID
 import kotlin.time.Duration
@@ -50,6 +55,26 @@ class BatchController(
     private val opsForHash: HashOperations<String, String, Any> = redisTemplate.opsForHash()
     private val opsForSet: SetOperations<String, Any> = redisTemplate.opsForSet()
     private val rediSearch: RediSearchCommands = jedisPool as RediSearchCommands
+
+    // Helper method to update location field for geo-spatial queries
+    private fun updateLocationField(trafficDensity: TrafficDensity) {
+        try {
+            val key = "traffic_density:${trafficDensity.id}"
+            // Add location field for geo-spatial queries
+            if (trafficDensity.latitude.isNotBlank() && trafficDensity.longitude.isNotBlank()) {
+                try {
+                    val lat = trafficDensity.latitude.toDouble()
+                    val lon = trafficDensity.longitude.toDouble()
+                    jedisPool.hset(key, "location", "$lon,$lat")
+                    log.debug("Updated location field for $key: $lon,$lat")
+                } catch (e: NumberFormatException) {
+                    log.warn("Invalid latitude/longitude format for $key: ${trafficDensity.latitude},${trafficDensity.longitude}")
+                }
+            }
+        } catch (e: Exception) {
+            log.error("Error updating location field: ${e.localizedMessage}")
+        }
+    }
 
     @PostMapping("/run")
     fun run(@RequestParam csvName: String): String {
@@ -152,21 +177,26 @@ class BatchController(
     fun search(
         @RequestParam(required = false) latitude: String? = null,
         @RequestParam(required = false) longitude: String? = null,
+        @RequestParam(required = false) minSpeed: Int? = null,
+        @RequestParam(required = false) maxSpeed: Int? = null,
+        @RequestParam(defaultValue = "false") fuzzy: Boolean = false,
         @RequestParam(defaultValue = "10") limit: Int = 10,
         @RequestParam(defaultValue = "0") offset: Int = 0
     ): Map<String, Any> {
         val queryBuilder = StringBuilder()
+        val conditions: MutableList<String> = mutableListOf()
+        latitude?.let { it: String ->
+            conditions.add(element = if (fuzzy) "@latitude:%${it}%" else "@latitude:*${it}*")
+        }
+        longitude?.let { it: String ->
+            conditions.add(element = if (fuzzy) "@longitude:%${it}%" else "@longitude:*${it}*")
+        }
+        if (minSpeed != null || maxSpeed != null)
+            conditions.add(element = "@averageSpeed:[${minSpeed} ${maxSpeed}]")
+        // Combine all conditions with AND
         when {
-            !latitude.isNullOrBlank() || !longitude.isNullOrBlank() -> {
-                if (!latitude.isNullOrBlank())
-                    queryBuilder.append("@latitude:*${latitude}*") // Use wildcard for partial match
-                if (!longitude.isNullOrBlank()) {
-                    if (queryBuilder.isNotEmpty())
-                        queryBuilder.append(" ")
-                    queryBuilder.append("@longitude:*${longitude}*") // Use wildcard for partial match
-                }
-            }
-            else -> queryBuilder.append("*") // If neither is provided, default to "*"
+            conditions.isNotEmpty() -> queryBuilder.append(conditions.joinToString(separator = " "))
+            else -> queryBuilder.append("*") // If no conditions, default to "*"
         }
         val queryString: String = queryBuilder.toString()
         // Create query
@@ -202,12 +232,102 @@ class BatchController(
             }
         } catch (e: Exception) {
             log.error("Error executing search: ${e.localizedMessage}")
+            return mapOf("Error" to e.localizedMessage)
         }
         return mapOf(
             "searchDuration" to searchDuration.inWholeMilliseconds,
             "query" to queryString,
             "total" to totalResults,
             "results" to searchResults
+        )
+    }
+
+    @GetMapping("/geo-search")
+    fun geoSearch(
+        @RequestParam latitude: Double,
+        @RequestParam longitude: Double,
+        @RequestParam(defaultValue = "1.0") radius: Double,
+        @RequestParam(defaultValue = "km") unit: String = "km",
+        @RequestParam(defaultValue = "10") limit: Int = 10,
+        @RequestParam(defaultValue = "0") offset: Int = 0
+    ): Map<String, Any> {
+        val queryString = "@location:[$longitude $latitude $radius $unit]" // Build geo query
+        val query: Query = Query(queryString)
+            .limit(offset, limit)
+            .setWithScores()
+            .returnFields("id", "dateTime", "latitude", "longitude", "geohash", "minimumSpeed", "maximumSpeed", "averageSpeed", "numberOfVehicles")
+
+        // Execute search
+        var searchDuration: Duration = Duration.ZERO
+        var searchResults: List<TrafficDensity> = emptyList()
+        var totalResults: Long = 0
+        try {
+            val searchResult: SearchResult
+            searchDuration = measureTime {
+                searchResult = rediSearch.ftSearch(INDEX_TRAFFIC_DENSITY, query)
+            }
+            totalResults = searchResult.totalResults
+            if (totalResults > 0) {
+                searchResults = searchResult.documents.map { doc: Document ->
+                    val properties: MutableIterable<MutableMap.MutableEntry<String, Any>> = doc.properties
+                    TrafficDensity(
+                        id = UUID.fromString(properties.firstOrNull { it.key == "id" }?.value as? String ?: UUID.randomUUID().toString()),
+                        dateTime = doc.get("dateTime") as String,
+                        latitude = properties.firstOrNull { it.key == "latitude" }?.value as? String ?: "",
+                        longitude = properties.firstOrNull { it.key == "longitude" }?.value as? String ?: "",
+                        geohash = properties.firstOrNull { it.key == "geohash" }?.value as? String ?: "",
+                        minimumSpeed = (properties.firstOrNull { it.key == "minimumSpeed" }?.value as? String)?.toIntOrNull() ?: 0,
+                        maximumSpeed = (properties.firstOrNull { it.key == "maximumSpeed" }?.value as? String)?.toIntOrNull() ?: 0,
+                        averageSpeed = (properties.firstOrNull { it.key == "averageSpeed" }?.value as? String)?.toIntOrNull() ?: 0,
+                        numberOfVehicles = (properties.firstOrNull { it.key == "numberOfVehicles" }?.value as? String)?.toIntOrNull() ?: 0
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            log.error("Error executing geo search: ${e.localizedMessage}")
+            return mapOf("Error" to e.localizedMessage)
+        }
+        return mapOf(
+            "searchDuration" to searchDuration.inWholeMilliseconds,
+            "query" to queryString,
+            "total" to totalResults,
+            "results" to searchResults
+        )
+    }
+
+    @GetMapping("/aggregate")
+    fun aggregate(
+        @RequestParam(required = false) geohash: String? = null,
+        @RequestParam(defaultValue = "geohash") groupBy: String = "geohash",
+        @RequestParam(defaultValue = "10") limit: Int = 10
+    ): Map<String, Any> {
+        val queryString: String = if (geohash != null) "@geohash:$geohash" else "*"
+        // Create aggregation builder
+        val aggregationBuilder: AggregationBuilder = AggregationBuilder(queryString)
+            .groupBy("@$groupBy") // Group by the specified field
+            .limit(0, limit)
+
+        // Execute aggregation
+        val aggregationDuration: Duration
+        val aggregationResults: List<Map<String, Any>>
+        try {
+            aggregationDuration = measureTime {
+                val aggResult: AggregationResult = rediSearch.ftAggregate(INDEX_TRAFFIC_DENSITY, aggregationBuilder)
+                aggregationResults = aggResult.results.map { row: MutableMap<String, Any> ->
+                    row.entries.associate { entry: MutableMap.MutableEntry<String, Any> ->
+                        entry.key to entry.value
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            log.error("Error executing aggregation: ${e.localizedMessage}")
+            return mapOf("Error" to e.localizedMessage)
+        }
+        return mapOf(
+            "aggregationDuration" to aggregationDuration.inWholeMilliseconds,
+            "query" to queryString,
+            "groupBy" to groupBy,
+            "results" to aggregationResults
         )
     }
 
@@ -224,8 +344,11 @@ class BatchController(
             val sc: Schema = Schema()
                 .addTagField("id")
                 .addTextField("dateTime", 1.0)
+                // Keep latitude and longitude as text fields for backward compatibility
                 .addTextField("latitude", 1.0)
                 .addTextField("longitude", 1.0)
+                // Add a geo field for spatial queries
+                .addGeoField("location")
                 .addTextField("geohash", 1.0)
                 .addNumericField("minimumSpeed")
                 .addNumericField("maximumSpeed")
@@ -234,7 +357,28 @@ class BatchController(
             val def: IndexDefinition = IndexDefinition().setPrefixes("traffic_density:")
             val opt: IndexOptions = IndexOptions.defaultOptions().setNoStopwords()
             rediSearch.ftCreate(INDEX_TRAFFIC_DENSITY, opt.setDefinition(def), sc)
-            log.info("Created traffic density index")
+            log.info("Created enhanced traffic density index with geo-spatial support")
+
+            // Create a secondary index for aggregation queries if needed
+            createAggregationIndex()
         }
+    }
+
+    private fun createAggregationIndex() {
+        val AGG_INDEX = "idx_traffic_agg"
+        try {
+            rediSearch.ftDropIndex(AGG_INDEX)
+        } catch (e: Exception) {
+            log.warn("Error dropping index: ${e.localizedMessage}")
+        }
+        val sc: Schema = Schema()
+            .addTagField("id")
+            .addNumericField("averageSpeed")
+            .addNumericField("numberOfVehicles")
+            .addTextField("geohash", 1.0)
+        val def: IndexDefinition = IndexDefinition().setPrefixes("traffic_density:")
+        val opt: IndexOptions = IndexOptions.defaultOptions()
+        rediSearch.ftCreate(AGG_INDEX, opt.setDefinition(def), sc)
+        log.info("Created aggregation index for traffic density data")
     }
 }

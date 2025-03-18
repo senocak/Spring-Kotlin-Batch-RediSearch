@@ -100,8 +100,33 @@ GET /api/batch/traffic-density/search
 Parameters:
 - `latitude` (optional): Filter by latitude
 - `longitude` (optional): Filter by longitude
+- `dateTime` (optional): Filter by dateTime
+- `minSpeed` (optional): Minimum average speed filter
+- `maxSpeed` (optional): Maximum average speed filter
+- `fuzzy` (optional, default: false): Enable fuzzy matching for text fields
 - `limit` (optional, default: 10): Number of results to return
 - `offset` (optional, default: 0): Offset for pagination
+
+4. Geo-Spatial Search:
+```http
+GET /api/batch/traffic-density/geo-search
+```
+Parameters:
+- `latitude` (required): Center point latitude
+- `longitude` (required): Center point longitude
+- `radius` (optional, default: 1.0): Search radius
+- `unit` (optional, default: "km"): Distance unit (km, m, mi, ft)
+- `limit` (optional, default: 10): Number of results to return
+- `offset` (optional, default: 0): Offset for pagination
+
+5. Aggregation Queries:
+```http
+GET /api/batch/traffic-density/aggregate
+```
+Parameters:
+- `geohash` (optional): Filter by geohash
+- `groupBy` (optional, default: "geohash"): Field to group results by
+- `limit` (optional, default: 10): Number of results to return
 
 ### Example Usage
 
@@ -120,13 +145,33 @@ curl -X GET "http://localhost:8099/api/batch/traffic-density"
 curl -X GET "http://localhost:8099/api/batch/traffic-density/search?latitude=41&longitude=28&limit=100&offset=0"
 ```
 
+4. Search with numeric range and fuzzy matching:
+```bash
+curl -X GET "http://localhost:8099/api/batch/traffic-density/search?minSpeed=50&maxSpeed=80&dateTime=2024&fuzzy=true"
+```
+
+5. Geo-spatial search (find traffic data within 5km of a location):
+```bash
+curl -X GET "http://localhost:8099/api/batch/traffic-density/geo-search?latitude=41.0082&longitude=28.9784&radius=5.0"
+```
+
+6. Aggregation query (group by geohash):
+```bash
+curl -X GET "http://localhost:8099/api/batch/traffic-density/aggregate?groupBy=geohash&limit=20"
+```
+
 ## Features
 
 - Batch processing of traffic density data
 - Redis storage with efficient data structures
-- Redis Search for fast querying of traffic density data
-- Secondary indexes for latitude and longitude
-- RESTful API endpoints
+- Advanced Redis Search capabilities:
+  - Full-text search with wildcard matching
+  - Fuzzy text matching for error-tolerant searches
+  - Numeric range queries for speed metrics
+  - Geo-spatial search for location-based queries
+  - Aggregation queries for data analysis
+- Secondary indexes for optimized search performance
+- RESTful API endpoints with comprehensive query options
 - Configurable Redis and PostgreSQL connections
 - Support for both standalone Redis and Redis Cluster
 - Robust error handling

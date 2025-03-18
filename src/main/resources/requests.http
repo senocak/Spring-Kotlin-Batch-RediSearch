@@ -8,5 +8,23 @@ GET http://localhost:8099/api/batch/traffic-density
 GET http://localhost:8099/api/batch/traffic-density/search
     ?latitude=41
     &longitude=28
+    &fuzzy=false
+    &minSpeed=20
+    &maxSpeed=30
     &limit=100
     &offset=0
+
+### Geo Search traffic density data with filters
+GET http://localhost:8099/api/batch/traffic-density/geo-search
+    ?latitude=41.0421752929688
+    &longitude=28.9764404296875
+    &radius=1
+    &unit=km
+    &limit=100
+    &offset=0
+
+### Geo Search traffic density data with filters
+GET http://localhost:8099/api/batch/traffic-density/aggregate
+    ?geohash=sxk9e2
+    &groupBy=geohash
+    &limit=100
