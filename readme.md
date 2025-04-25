@@ -1,35 +1,43 @@
-# RediSearch
+# Spring-Kotlin-Batch-RediSearch-Redisson-Jedis
 
-A Spring Boot application using Kotlin that performs dynamic search on large datasets using RediSearch for efficient querying.
+A Spring Boot application using Kotlin that demonstrates efficient search capabilities on traffic density data using Redis Stack with RediSearch module and Redisson client.
 
 ## Overview
 
-This application demonstrates how to use RediSearch with Spring Boot and Kotlin to implement efficient search capabilities for large datasets. It provides a RESTful API for managing products and performing various types of searches.
+This application showcases how to use RediSearch with Spring Boot, Kotlin, and Redisson to implement efficient search capabilities for traffic density data. It provides a RESTful API for importing, searching, and comparing performance of different Redis clients.
 
 ## Features
 
-- Full CRUD operations for products
-- Simple search operations (by name, category, price range, tag)
-- Advanced search with multiple criteria
-- Integration with Redis and RediSearch for efficient querying
+- Import traffic density data from CSV files using Spring Batch
+- Search traffic density data with various filters:
+  - Location-based search (latitude, longitude, radius)
+  - Speed range (minimum, maximum)
+  - Number of vehicles
+- Compare performance between different Redis clients:
+  - Redisson
+  - Jedis
+  - Lettuce
+- RediSearch indexing for efficient querying
 
 ## Prerequisites
 
 - JDK 21
 - Gradle
-- Redis with RediSearch module
+- Docker and Docker Compose
 
 ## Getting Started
 
 ### Setting up Redis with RediSearch
 
-The easiest way to get started with Redis and RediSearch is to use Docker:
+The easiest way to get started with Redis and RediSearch is to use the provided Docker Compose file:
 
 ```bash
-docker run -p 6379:6379 redis/redis-stack
+docker-compose up -d
 ```
 
-This will start a Redis instance with the RediSearch module enabled.
+This will start:
+- Redis Stack Server (with RediSearch module) on port 6382
+- RedisInsight (Redis GUI) on port 5540
 
 ### Running the Application
 
@@ -37,73 +45,120 @@ This will start a Redis instance with the RediSearch module enabled.
 ./gradlew bootRun
 ```
 
-The application will start on port 8080.
+The application will start on port 8091.
+
+### Importing Data
+
+To import traffic density data from the provided CSV file:
+
+```bash
+curl -X POST "http://localhost:8091/api/run?csvName=./traffic_density_202412.csv"
+```
 
 ## API Endpoints
 
-### Product Management
+### Data Import
 
-- `POST /api/products` - Create a new product
-- `GET /api/products/{id}` - Get a product by ID
-- `GET /api/products` - Get all products
-- `PUT /api/products/{id}` - Update a product
-- `DELETE /api/products/{id}` - Delete a product
+- `POST /api/run?csvName={csvFilePath}` - Run batch job to import data from CSV file
 
 ### Search Operations
 
-- `GET /api/products/search/name?name={name}` - Search products by name
-- `GET /api/products/search/category?category={category}` - Search products by category
-- `GET /api/products/search/price?minPrice={minPrice}&maxPrice={maxPrice}` - Search products by price range
-- `GET /api/products/search/tag?tag={tag}` - Search products by tag
-- `GET /api/products/search` - Advanced search with multiple criteria
-  - Optional parameters: `name`, `category`, `minPrice`, `maxPrice`, `tag`
+- `GET /api/redisearch` - Search traffic density data with various filters
+  - Optional parameters:
+    - `latitude` - Latitude coordinate
+    - `longitude` - Longitude coordinate
+    - `radius` - Search radius (default: 10)
+    - `minSpeed` - Minimum speed
+    - `maxSpeed` - Maximum speed
+    - `numberOfVehicles` - Number of vehicles
+    - `limit` - Maximum number of results (default: 10)
+    - `offset` - Pagination offset (default: 0)
+    - `type` - Redis client type to use (default: "lettuce", options: "jedis", "lettuce")
 
-## Example Product JSON
+### Performance Comparison
 
-```json
-{
-  "id": "1",
-  "name": "Laptop",
-  "description": "High-performance laptop",
-  "category": "Electronics",
-  "price": 1200.00,
-  "tags": ["computer", "tech", "portable"],
-  "attributes": {
-    "brand": "TechBrand",
-    "color": "Silver"
-  }
-}
+- `GET /api` - Compare performance between different Redis clients
+
+## Example API Requests
+
+### Import Data
+```bash
+curl -X POST "http://localhost:8091/api/run?csvName=./traffic_density_202412.csv"
+```
+
+### Basic Search
+```bash
+curl "http://localhost:8091/api/redisearch"
+```
+
+### Search by Location
+```bash
+curl "http://localhost:8091/api/redisearch?latitude=41.076237426965875&longitude=28.887702226638797&radius=1"
+```
+
+### Search by Speed Range
+```bash
+curl "http://localhost:8091/api/redisearch?minSpeed=99&maxSpeed=100&limit=10"
+```
+
+### Search by Number of Vehicles
+```bash
+curl "http://localhost:8091/api/redisearch?numberOfVehicles=28&limit=5"
+```
+
+### Compare Redis Clients Performance
+```bash
+curl "http://localhost:8091/api"
 ```
 
 ## How It Works
 
-The application uses Redis OM Spring to integrate with RediSearch. The key components are:
+The application uses Redis Stack with RediSearch module and multiple Redis clients to demonstrate different approaches to Redis integration. The key components are:
 
-1. **Product Model**: Defines the structure of the product data with appropriate annotations for RediSearch indexing.
-2. **ProductRepository**: Provides methods for CRUD operations and basic search queries.
-3. **ProductService**: Implements business logic and advanced search capabilities.
-4. **ProductController**: Exposes RESTful endpoints for interacting with the application.
+1. **TrafficDensity Model**: Defines the structure of the traffic density data with appropriate annotations for Redis storage and indexing.
+2. **BatchConfig**: Configures Spring Batch job for importing data from CSV files into Redis.
+3. **RedisConfig**: Configures Redis connections and clients (Redisson, Jedis, Spring Data Redis).
+4. **ProductController**: Exposes RESTful endpoints for searching and comparing Redis clients.
 
-## Advanced Search
+## Project Structure
 
-The advanced search endpoint allows you to search for products using multiple criteria:
+- `src/main/kotlin/com/github/senocak/redisearch/`
+  - `RediSearchApplication.kt` - Main application class
+  - `config/` - Configuration classes
+    - `BatchConfig.kt` - Spring Batch configuration
+    - `RedisConfig.kt` - Redis configuration
+  - `controller/` - REST controllers
+    - `ProductController.kt` - Controller for search operations
+  - `model/` - Data models
+    - `TrafficDensity.kt` - Traffic density data model and repository
 
-```
-GET /api/products/search?name=laptop&category=Electronics&minPrice=1000&maxPrice=2000&tag=portable
-```
+## Dependencies
+
+- Spring Boot 3.4.3
+- Spring Batch
+- Kotlin 1.9.25
+- Redis Clients:
+  - Redisson 3.45.1
+  - Jedis 5.2.0
+  - Lettuce (via Spring Data Redis)
+- H2 Database (for Spring Batch metadata)
+
+## Notes
+
+The application demonstrates different approaches to Redis integration and search capabilities. It's designed to showcase performance differences between different Redis clients and the power of RediSearch for efficient querying of large datasets.
 
 ## Discussion
 
-Redis'in kendi içinde bir secondary index özelliği yoktur. @Indexed gerçek Redis index değildir.
+Redis does not have a built-in secondary index feature. The @Indexed annotation is not a true Redis index.
 
-Spring Data Redis'te`@Indexed` anotasyonu Redis üzerinde gerçek anlamda bir "index" oluşturmaz (yani veri tabanlarındaki gibi B-tree, hash index vs. değil).
+In Spring Data Redis, the `@Indexed` annotation does not create a "real" index on Redis (not like B-tree, hash index, etc. in traditional databases).
 
-@Indexed anotasyonu bir alanı arama yapılabilir (queryable) hale getirmek için kullanılır.
+The @Indexed annotation is used to make a field queryable.
 
-Redis Set'leri (SET) kullanır ve her benzersiz değer için bir set key oluşturur.
+It uses Redis Sets (SET) and creates a set key for each unique value.
 
-@Indexed ile işaretlenmiş alanlar için, o alanın her farklı değeri için bir Redis Seti oluşturur.
+For fields marked with @Indexed, it creates a Redis Set for each different value of that field.
 
-Bu sayede findByLatitude(...) gibi metotlarla sorgulama yapabilir.
+This allows querying using methods like findByLatitude(...).
 
-SET’ler bellekte yer kaplar. 
+These SETs consume memory space.
