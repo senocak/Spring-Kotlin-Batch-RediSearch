@@ -1,203 +1,109 @@
-# Spring Kotlin Batch RediSearch
+# RediSearch
 
-A Spring Boot application written in Kotlin that processes traffic density data using Spring Batch and stores it in Redis. The application processes CSV files containing traffic density information in batches and provides search capabilities using Redis Search.
+A Spring Boot application using Kotlin that performs dynamic search on large datasets using RediSearch for efficient querying.
 
-## Technologies Used
+## Overview
 
-- Kotlin 1.9.25
-- Spring Boot 3.4.3
-- Spring Batch
-- Spring Data Redis
-- Redis Stack (with Redis Search)
-- Spring Data JPA
-- PostgreSQL (for Spring Batch metadata)
-- Gradle
-- Java 21
+This application demonstrates how to use RediSearch with Spring Boot and Kotlin to implement efficient search capabilities for large datasets. It provides a RESTful API for managing products and performing various types of searches.
+
+## Features
+
+- Full CRUD operations for products
+- Simple search operations (by name, category, price range, tag)
+- Advanced search with multiple criteria
+- Integration with Redis and RediSearch for efficient querying
 
 ## Prerequisites
 
 - JDK 21
-- Redis Stack (or Redis with RediSearch module)
-- PostgreSQL database (for Spring Batch metadata)
-- Gradle (wrapper included)
-- Docker and Docker Compose (optional, for running Redis)
+- Gradle
+- Redis with RediSearch module
 
-## Installation
+## Getting Started
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/senocak/Spring-Kotlin-Batch-Redis.git
-   cd Spring-Kotlin-Batch-Redis
-   ```
+### Setting up Redis with RediSearch
 
-2. Start Redis using Docker Compose:
-   ```bash
-   docker-compose up -d redis-stack-single
-   ```
+The easiest way to get started with Redis and RediSearch is to use Docker:
 
-   Alternatively, to run a Redis cluster:
-   ```bash
-   docker-compose up -d
-   ```
-
-3. Configure the database:
-   - Create a PostgreSQL database for Spring Batch metadata
-   - Update the database configuration in `application.yml` if needed (default values provided)
-
-4. Build the project:
-   ```bash
-   ./gradlew build
-   ```
-
-## Configuration
-
-The application can be configured through `application.yml` or environment variables:
-
-```yaml
-# PostgreSQL Configuration (for Spring Batch metadata)
-SERVER_IP: localhost (default)
-POSTGRESQL_PORT: 54321 (default)
-POSTGRESQL_DB: batch (default)
-POSTGRESQL_SCHEMA: public (default)
-POSTGRESQL_USER: postgres (default)
-POSTGRESQL_PASSWORD: senocak (default)
-
-# Redis Configuration
-REDIS_HOST: localhost (default)
-REDIS_PORT: 6382 (default)
-REDIS_PASSWORD: (empty by default)
-REDIS_TIMEOUT: 300 (default)
-```
-
-Additional configuration options:
-- Server port: 8099
-- Hikari connection pool settings
-- JPA/Hibernate configuration
-- Spring Batch settings
-- Redis cluster configuration (commented out by default)
-
-## Usage
-
-### API Endpoints
-
-1. Run Batch Job:
-```http
-POST /api/batch/traffic-density/run
-```
-Parameters:
-- `csvName`: Name of the CSV file to process
-
-2. Get Redis Data Information:
-```http
-GET /api/batch/traffic-density
-```
-Returns information about the Redis data store, including keys, data types, and statistics.
-
-3. Search Traffic Density Data:
-```http
-GET /api/batch/traffic-density/search
-```
-Parameters:
-- `latitude` (optional): Filter by latitude
-- `longitude` (optional): Filter by longitude
-- `dateTime` (optional): Filter by dateTime
-- `minSpeed` (optional): Minimum average speed filter
-- `maxSpeed` (optional): Maximum average speed filter
-- `fuzzy` (optional, default: false): Enable fuzzy matching for text fields
-- `limit` (optional, default: 10): Number of results to return
-- `offset` (optional, default: 0): Offset for pagination
-
-4. Geo-Spatial Search:
-```http
-GET /api/batch/traffic-density/geo-search
-```
-Parameters:
-- `latitude` (required): Center point latitude
-- `longitude` (required): Center point longitude
-- `radius` (optional, default: 1.0): Search radius
-- `unit` (optional, default: "km"): Distance unit (km, m, mi, ft)
-- `limit` (optional, default: 10): Number of results to return
-- `offset` (optional, default: 0): Offset for pagination
-
-5. Aggregation Queries:
-```http
-GET /api/batch/traffic-density/aggregate
-```
-Parameters:
-- `geohash` (optional): Filter by geohash
-- `groupBy` (optional, default: "geohash"): Field to group results by
-- `limit` (optional, default: 10): Number of results to return
-
-### Example Usage
-
-1. Run the batch job:
 ```bash
-curl -X POST "http://localhost:8099/api/batch/traffic-density/run?csvName=./traffic_density_202412.csv"
+docker run -p 6379:6379 redis/redis-stack
 ```
 
-2. Get Redis data information:
+This will start a Redis instance with the RediSearch module enabled.
+
+### Running the Application
+
 ```bash
-curl -X GET "http://localhost:8099/api/batch/traffic-density"
+./gradlew bootRun
 ```
 
-3. Search traffic density data:
-```bash
-curl -X GET "http://localhost:8099/api/batch/traffic-density/search?latitude=41&longitude=28&limit=100&offset=0"
+The application will start on port 8080.
+
+## API Endpoints
+
+### Product Management
+
+- `POST /api/products` - Create a new product
+- `GET /api/products/{id}` - Get a product by ID
+- `GET /api/products` - Get all products
+- `PUT /api/products/{id}` - Update a product
+- `DELETE /api/products/{id}` - Delete a product
+
+### Search Operations
+
+- `GET /api/products/search/name?name={name}` - Search products by name
+- `GET /api/products/search/category?category={category}` - Search products by category
+- `GET /api/products/search/price?minPrice={minPrice}&maxPrice={maxPrice}` - Search products by price range
+- `GET /api/products/search/tag?tag={tag}` - Search products by tag
+- `GET /api/products/search` - Advanced search with multiple criteria
+  - Optional parameters: `name`, `category`, `minPrice`, `maxPrice`, `tag`
+
+## Example Product JSON
+
+```json
+{
+  "id": "1",
+  "name": "Laptop",
+  "description": "High-performance laptop",
+  "category": "Electronics",
+  "price": 1200.00,
+  "tags": ["computer", "tech", "portable"],
+  "attributes": {
+    "brand": "TechBrand",
+    "color": "Silver"
+  }
+}
 ```
 
-4. Search with numeric range and fuzzy matching:
-```bash
-curl -X GET "http://localhost:8099/api/batch/traffic-density/search?minSpeed=50&maxSpeed=80&dateTime=2024&fuzzy=true"
+## How It Works
+
+The application uses Redis OM Spring to integrate with RediSearch. The key components are:
+
+1. **Product Model**: Defines the structure of the product data with appropriate annotations for RediSearch indexing.
+2. **ProductRepository**: Provides methods for CRUD operations and basic search queries.
+3. **ProductService**: Implements business logic and advanced search capabilities.
+4. **ProductController**: Exposes RESTful endpoints for interacting with the application.
+
+## Advanced Search
+
+The advanced search endpoint allows you to search for products using multiple criteria:
+
+```
+GET /api/products/search?name=laptop&category=Electronics&minPrice=1000&maxPrice=2000&tag=portable
 ```
 
-5. Geo-spatial search (find traffic data within 5km of a location):
-```bash
-curl -X GET "http://localhost:8099/api/batch/traffic-density/geo-search?latitude=41.0082&longitude=28.9784&radius=5.0"
-```
+## Discussion
 
-6. Aggregation query (group by geohash):
-```bash
-curl -X GET "http://localhost:8099/api/batch/traffic-density/aggregate?groupBy=geohash&limit=20"
-```
+Redis'in kendi içinde bir secondary index özelliği yoktur. @Indexed gerçek Redis index değildir.
 
-## Features
+Spring Data Redis'te`@Indexed` anotasyonu Redis üzerinde gerçek anlamda bir "index" oluşturmaz (yani veri tabanlarındaki gibi B-tree, hash index vs. değil).
 
-- Batch processing of traffic density data
-- Redis storage with efficient data structures
-- Advanced Redis Search capabilities:
-  - Full-text search with wildcard matching
-  - Fuzzy text matching for error-tolerant searches
-  - Numeric range queries for speed metrics
-  - Geo-spatial search for location-based queries
-  - Aggregation queries for data analysis
-- Secondary indexes for optimized search performance
-- RESTful API endpoints with comprehensive query options
-- Configurable Redis and PostgreSQL connections
-- Support for both standalone Redis and Redis Cluster
-- Robust error handling
-- Performance metrics for search operations
+@Indexed anotasyonu bir alanı arama yapılabilir (queryable) hale getirmek için kullanılır.
 
-## Reference Documentation
+Redis Set'leri (SET) kullanır ve her benzersiz değer için bir set key oluşturur.
 
-For further reference, please consider the following sections:
+@Indexed ile işaretlenmiş alanlar için, o alanın her farklı değeri için bir Redis Seti oluşturur.
 
-* [Official Gradle documentation](https://docs.gradle.org)
-* [Spring Boot Gradle Plugin Reference Guide](https://docs.spring.io/spring-boot/3.4.3/gradle-plugin)
-* [Spring Batch](https://docs.spring.io/spring-boot/3.4.3/how-to/batch.html)
-* [Spring Data Redis](https://docs.spring.io/spring-boot/3.4.3/reference/data/nosql.html#data.nosql.redis)
-* [Redis Stack Documentation](https://redis.io/docs/stack/)
-* [Redis Search Documentation](https://redis.io/docs/stack/search/)
-* [Spring Data JPA](https://docs.spring.io/spring-boot/3.4.3/reference/data/sql.html#data.sql.jpa-and-spring-data)
-* [Spring Web](https://docs.spring.io/spring-boot/3.4.3/reference/web/servlet.html)
+Bu sayede findByLatitude(...) gibi metotlarla sorgulama yapabilir.
 
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+SET’ler bellekte yer kaplar. 

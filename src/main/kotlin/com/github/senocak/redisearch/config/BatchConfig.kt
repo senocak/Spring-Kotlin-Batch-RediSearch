@@ -1,8 +1,8 @@
-package com.github.senocak.config
+package com.github.senocak.redisearch.config
 
-import com.github.senocak.logger
-import com.github.senocak.model.TrafficDensity
-import com.github.senocak.model.TrafficDensityRepository
+import com.github.senocak.redisearch.logger
+import com.github.senocak.redisearch.model.TrafficDensity
+import com.github.senocak.redisearch.model.TrafficDensityRepository
 import org.slf4j.Logger
 import org.springframework.batch.core.Job
 import org.springframework.batch.core.JobExecution
@@ -26,14 +26,16 @@ import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.core.SetOperations
 import org.springframework.transaction.PlatformTransactionManager
 import java.util.Date
+import java.util.UUID
 
 @Configuration
 class BatchConfig(
     private val jobRepository: JobRepository,
     private val transactionManager: PlatformTransactionManager,
     private val redisTemplate: RedisTemplate<String, Any>,
-    private val trafficDensityRepository: TrafficDensityRepository,
+    private val trafficDensityRepository: TrafficDensityRepository
 ) {
+    private val log: Logger by logger()
     private val hashOperations: HashOperations<String, String, Any> = redisTemplate.opsForHash<String, Any>()
     private val setOperations: SetOperations<String, Any> = redisTemplate.opsForSet()
 
@@ -49,6 +51,7 @@ class BatchConfig(
             .names("DATE_TIME","LATITUDE","LONGITUDE","GEOHASH","MINIMUM_SPEED","MAXIMUM_SPEED","AVERAGE_SPEED","NUMBER_OF_VEHICLES")
             .fieldSetMapper { fieldSet: FieldSet ->
                 TrafficDensity(
+                    id = UUID.randomUUID(),
                     dateTime = fieldSet.readString("DATE_TIME"),
                     latitude = fieldSet.readString("LATITUDE"),
                     longitude = fieldSet.readString("LONGITUDE"),
@@ -57,9 +60,13 @@ class BatchConfig(
                     maximumSpeed = fieldSet.readInt("MAXIMUM_SPEED"),
                     averageSpeed = fieldSet.readInt("AVERAGE_SPEED"),
                     numberOfVehicles = fieldSet.readInt("NUMBER_OF_VEHICLES"),
-                )
+                ).also {
+                    it.location = "${it.longitude},${it.latitude}"
+                }
             }
             .build()
+
+
 
     @Bean
     fun importTrafficDensityStep(): Step =
@@ -68,7 +75,8 @@ class BatchConfig(
             .reader(reader(path = null)) // null path just for type resolution
             .processor { it: TrafficDensity -> it }
             .writer { list: Chunk<out TrafficDensity> ->
-                if (redisTemplate.keys("traffic_density:*").size < 1_000) {
+                val size: Int = redisTemplate.keys("traffic_density:*").size
+                if (size < 200_001) {
                     list.forEach { it: TrafficDensity ->
                         val entityKey = "traffic_density:${it.id}"
                         val entityMap: Map<String, String> = mapOf(
@@ -85,16 +93,17 @@ class BatchConfig(
                             "_class" to it.javaClass.name,
                         )
                         hashOperations.putAll(entityKey, entityMap)
-                        // Add to secondary indexes (latitude and longitude)
-                        val latitudeKey = "traffic_density:latitude:${it.latitude}"
-                        setOperations.add(latitudeKey, it.id.toString())
-                        val longitudeKey = "traffic_density:longitude:${it.longitude}"
-                        setOperations.add(longitudeKey, it.id.toString())
-                        setOperations.add("traffic_density:${it.id.toString()}:idx", latitudeKey, longitudeKey)
-                        setOperations.add("traffic_density", it.id.toString())
+                         //Add to secondary indexes (latitude and longitude)
+                        //val latitudeKey = "traffic_density:latitude:${it.latitude}"
+                        //setOperations.add(latitudeKey, it.id.toString())
+                        //val longitudeKey = "traffic_density:longitude:${it.longitude}"
+                        //setOperations.add(longitudeKey, it.id.toString())
+                        //setOperations.add("traffic_density:${it.id.toString()}:idx", latitudeKey, longitudeKey)
+                        //setOperations.add("traffic_density", it.id.toString())
                     }
+                    //trafficDensityRepository.saveAll(list)
+                    log.info("Redis keys: $size")
                 }
-                //trafficDensityRepository.saveAll(list)
             }
             .build()
 
@@ -104,7 +113,6 @@ class BatchConfig(
             .incrementer(RunIdIncrementer()) // Optional: Ensures unique job runs
             .start(importTrafficDensityStep())
             .listener(object: JobExecutionListener {
-                private val log: Logger by logger()
                 private var start: Long = 0
 
                 override fun beforeJob(jobExecution: JobExecution) {

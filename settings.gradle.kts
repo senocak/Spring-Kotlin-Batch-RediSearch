@@ -1,1 +1,1 @@
-rootProject.name = "SpringKotlinBatch"
+rootProject.name = "RediSearch-Redisson"

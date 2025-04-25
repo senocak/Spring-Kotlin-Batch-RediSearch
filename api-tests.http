@@ -1,0 +1,38 @@
+@baseUrl = http://localhost:8091
+
+### Run batch job with specified CSV file
+POST {{baseUrl}}/api/run?csvName=./traffic_density_202412.csv
+
+### redisearch
+GET {{baseUrl}}/api/redisearch?type=jedis
+
+### redisearch
+GET {{baseUrl}}/api/redisearch
+###?type=lettuce
+
+### redisearch
+GET {{baseUrl}}/api/redisearch
+    ?offset=1000
+    &limit=1
+
+### redisearch
+GET {{baseUrl}}/api/redisearch
+    ?latitude=41.076237426965875
+    &longitude=28.887702226638797
+    &radius=1
+
+### redisearch
+GET {{baseUrl}}/api/redisearch
+    ?minSpeed=99
+    &maxSpeed=100
+    &offset=0
+    &limit=1000
+
+### redisearch
+GET {{baseUrl}}/api/redisearch
+    ?numberOfVehicles=28
+    &offset=0
+    &limit=5
+
+### compareEach
+GET {{baseUrl}}/api
