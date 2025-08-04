@@ -66,8 +66,6 @@ class BatchConfig(
             }
             .build()
 
-
-
     @Bean
     fun importTrafficDensityStep(): Step =
         StepBuilder("importTrafficDensityStep", jobRepository)
@@ -76,7 +74,7 @@ class BatchConfig(
             .processor { it: TrafficDensity -> it }
             .writer { list: Chunk<out TrafficDensity> ->
                 val size: Int = redisTemplate.keys("traffic_density:*").size
-                if (size < 200_001) {
+                //if (size < 200_001) {
                     list.forEach { it: TrafficDensity ->
                         val entityKey = "traffic_density:${it.id}"
                         val entityMap: Map<String, String> = mapOf(
@@ -103,7 +101,7 @@ class BatchConfig(
                     }
                     //trafficDensityRepository.saveAll(list)
                     log.info("Redis keys: $size")
-                }
+                //}
             }
             .build()
 

@@ -36,13 +36,22 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import redis.clients.jedis.JedisPooled
+import redis.clients.jedis.search.FTCreateParams
+import redis.clients.jedis.search.IndexDefinition
 import redis.clients.jedis.search.RediSearchCommands
+import redis.clients.jedis.search.Schema
+import java.io.FileOutputStream
 import java.io.IOException
+import java.net.URL
+import java.nio.channels.Channels
+import java.nio.channels.ReadableByteChannel
+import java.sql.Timestamp
+import java.text.SimpleDateFormat
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.measureTime
-import kotlin.use
 
 @RestController
 @RequestMapping("/api")
@@ -108,7 +117,6 @@ class ProductController(
         }
     }
 
-    /*
     fun initializeIndexJedis() {
         try {
             rediSearch.ftDropIndex(INDEX_TRAFFIC_DENSITY) // Drop the existing index
@@ -137,7 +145,62 @@ class ProductController(
             log.info("Created enhanced traffic density index with geo-spatial support")
         }
     }
-    */
+
+    @PostMapping("/download")
+    fun download(@RequestParam url: String = "https://data.ibb.gov.tr/dataset/3ee6d744-5da2-40c8-9cd6-0e3e41f1928f/resource/76671ebe-2fd2-426f-b85a-e3772263f483/download/traffic_density_202412.csv"): String {
+        // Download file asynchronously to see progress bar
+        val sdf = SimpleDateFormat("yyyy.MM.dd.HH.mm.ss")
+        val destinationPath = "traffic_density_${sdf.format(Timestamp(System.currentTimeMillis()))}.csv"
+        CompletableFuture.runAsync {
+            downloadFileWithProgress(fileUrl = url, destinationPath = destinationPath)
+        }
+        return destinationPath
+    }
+    private fun downloadFileWithProgress(fileUrl: String, destinationPath: String) {
+        try {
+            val url = URL(fileUrl)
+            Channels.newChannel(url.openStream()).use { readableByteChannel: ReadableByteChannel ->
+                FileOutputStream(destinationPath).use { fileOutputStream: FileOutputStream ->
+                    val fileSize: Long = url.openConnection().contentLengthLong
+                    var bytesTransferred = 0L
+                    val buffer = ByteArray(10 * 1024) // 10KB buffer
+
+                    while (true) {
+                        val bytesRead: Int = readableByteChannel.read(java.nio.ByteBuffer.wrap(buffer))
+                        if (bytesRead <= 0) break
+
+                        fileOutputStream.write(buffer, 0, bytesRead)
+                        bytesTransferred += bytesRead
+
+                        if (fileSize > 0) {
+                            val percentage: Double = (bytesTransferred * 100.0) / fileSize
+                            printProgress(bytesTransferred = bytesTransferred, totalSize = fileSize, percentage = percentage)
+                        } else {
+                            print("\rDownloaded: $bytesTransferred bytes")
+                        }
+                    }
+                    log.info("Download completed successfully!")
+                }
+            }
+        } catch (e: IOException) {
+            log.error("Error during download: ${e.message}")
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to download file: ${e.message}")
+        }
+    }
+    private fun printProgress(bytesTransferred: Long, totalSize: Long, percentage: Double) {
+        val width = 50
+        val progress: Int = (percentage / 100 * width).toInt()
+        val bar: String = buildString {
+            append("[")
+            repeat(progress) { append("=") }
+            repeat(width - progress) { append(" ") }
+            append("]")
+        }
+        println("$bar %6.2f%% ($bytesTransferred / $totalSize bytes)")
+        System.out.flush()
+    }
 
     /* count all hashes in redis
     EVAL "local count = 0; for _,k in ipairs(redis.call('keys','*')) do if redis.call('type',k).ok == 'hash' then count = count + 1 end end; return count;" 0
@@ -253,6 +316,7 @@ class ProductController(
                 try {
                     cursor = connection.scan(ScanOptions.scanOptions().match("traffic_density*").count(100).build())
                     while (cursor.hasNext()) {
+                        log.info("Found key: ${String(bytes = cursor.next()!!)}")
                         val key: String = String(cursor.next()!!) // Convert ByteArray to String
                         if (connection.type(key.toByteArray()) == DataType.HASH) {
                             keysTmp.add(element = key)
@@ -343,15 +407,3 @@ class ProductController(
         }
     }
 }
-
-//data class TrafficDensity(
-//    val id: UUID,
-//    val dateTime: String,
-//    val latitude: String,
-//    val longitude: String,
-//    val geohash: String,
-//    val minimumSpeed: Int,
-//    val maximumSpeed: Int,
-//    val averageSpeed: Int,
-//    val numberOfVehicles: Int,
-//): Serializable

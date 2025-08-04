@@ -1,0 +1,42 @@
+@baseUrl = http://localhost:8091
+
+### Download CSV file
+POST {{baseUrl}}/api/download?url=https://data.ibb.gov.tr/dataset/3ee6d744-5da2-40c8-9cd6-0e3e41f1928f/resource/bedd5ab2-9a00-4966-9921-9672d4478a51/download/traffic_density_202411.csv
+
+### Run batch job with specified CSV file
+POST {{baseUrl}}/api/run?csvName=./traffic_density_2025.08.03.14.56.54.csv
+
+### Search vehicles using jedis
+GET {{baseUrl}}/api/redisearch
+    ?type=jedis
+
+### Search vehicles using lettuce
+GET {{baseUrl}}/api/redisearch
+    ?type=lettuce
+
+### Search vehicles by offset and limit
+GET {{baseUrl}}/api/redisearch
+    ?offset=9999
+    &limit=1
+
+### Search vehicles by latitude and longitude
+GET {{baseUrl}}/api/redisearch
+    ?latitude=41.076237426965875
+    &longitude=28.887702226638797
+    &radius=1
+
+### Search vehicles by speed range
+GET {{baseUrl}}/api/redisearch
+    ?minSpeed=99
+    &maxSpeed=100
+    &offset=0
+    &limit=1000
+
+### Search vehicles by number of vehicles
+GET {{baseUrl}}/api/redisearch
+    ?numberOfVehicles=28
+    &offset=0
+    &limit=5
+
+### compareEach
+GET {{baseUrl}}/api
