@@ -429,9 +429,29 @@ config.useSingleServer().apply {
 - Team prefers high-level abstractions
 
 ## Problems
-- `OFFSET exceeds maximum of 10000`
-  - `FT.CONFIG SET MAXSEARCHRESULTS 100000` or 0 to disable it all
-- `Background indexing`: RediSearch is still processing and indexing the documents in the background, and it caught up just after your first query.
+### `OFFSET exceeds maximum of 10000`
+`FT.CONFIG SET MAXSEARCHRESULTS 100000` or 0 to disable it all
+
+### **Asynchronous Indexing**
+- RediSearch indexes data asynchronously. When you add large amounts of data quickly, the indexing process may lag behind data insertion.
+- RediSearch is still processing and indexing the documents in the background.
+
+### **Memory Pressure**
+With 829,001 records, Redis may experience memory pressure, causing:
+- Partial index evictions
+- Incomplete indexing cycles
+- Index corruption under load
+
+### Production Recommendations
+1. **Use Redis Cluster** for datasets > 1M records
+2. **Implement circuit breakers** for search operations
+3. **Add retry logic** with exponential backoff
+4. **Monitor index health** continuously
+5. **Set up alerts** for index inconsistencies
+6. **Consider data partitioning** by time or geography
+7. **Implement graceful degradation** when search is unavailable
+
+By implementing these strategies, you can ensure consistent search results even with large datasets, while maintaining the performance benefits that RediSearch provides.
 
 ## Conclusion
 RediSearch with Spring Boot and Kotlin provides a powerful combination for building high-performance search applications. The choice between Jedis and Redisson depends on your specific requirements:

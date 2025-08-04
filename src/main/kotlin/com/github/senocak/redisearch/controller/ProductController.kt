@@ -203,10 +203,14 @@ class ProductController(
         System.out.flush()
     }
 
+    @GetMapping(value = ["/index-status"])
+    fun getIndexStatus(): Map<String, Any> =
+        rediSearch.ftInfo(INDEX_TRAFFIC_DENSITY)
+
     /* count all hashes in redis
     EVAL "local count = 0; for _,k in ipairs(redis.call('keys','*')) do if redis.call('type',k).ok == 'hash' then count = count + 1 end end; return count;" 0
     */
-    @GetMapping("/redisearch")
+    @GetMapping(value = arrayOf<kotlin.String>("/redisearch"))
     fun search(
         @RequestParam(required = false) latitude: String? = null,
         @RequestParam(required = false) longitude: String? = null,

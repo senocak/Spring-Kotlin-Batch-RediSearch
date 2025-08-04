@@ -3,6 +3,9 @@
 ### Download CSV file
 POST {{baseUrl}}/api/download?url=https://data.ibb.gov.tr/dataset/3ee6d744-5da2-40c8-9cd6-0e3e41f1928f/resource/bedd5ab2-9a00-4966-9921-9672d4478a51/download/traffic_density_202411.csv
 
+### index-status
+GET {{baseUrl}}/api/index-status
+
 ### Run batch job with specified CSV file
 POST {{baseUrl}}/api/run?csvName=./traffic_density_2025.08.03.14.56.54.csv
 
