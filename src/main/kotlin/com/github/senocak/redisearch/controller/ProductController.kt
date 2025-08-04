@@ -75,7 +75,7 @@ class ProductController(
     private val rediSearch: RediSearchCommands = jedisPool as RediSearchCommands
 
     @PostConstruct
-    fun start() {
+    fun initializeIndexRedisson() {
         redisConnectionFactory.connection.use { it.ping() } // Forces connection setup
         try {
             search.dropIndex(INDEX_TRAFFIC_DENSITY) // Drop the existing index
@@ -117,6 +117,7 @@ class ProductController(
         }
     }
 
+    //@PostConstruct
     fun initializeIndexJedis() {
         try {
             rediSearch.ftDropIndex(INDEX_TRAFFIC_DENSITY) // Drop the existing index

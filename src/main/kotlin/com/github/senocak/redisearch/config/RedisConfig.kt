@@ -29,88 +29,6 @@ import redis.clients.jedis.JedisPooled
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 
-//@Configuration
-class RedisConfig2(
-    private val redisProperties: RedisProperties
-){
-
-    @Bean
-    fun redisClusterClient(): AbstractRedisClient =
-        when {
-            redisProperties.cluster != null -> {
-                val redisURIs: MutableList<RedisURI> = mutableListOf()
-                redisProperties.cluster.nodes.forEach { node: String? ->
-                    redisURIs.add(element = RedisURI.Builder.redis(node)
-                        .withTimeout(Duration.ofSeconds(60))
-                        .withPassword(redisProperties.password)
-                        .build())
-                }
-                RedisClusterClient.create(redisURIs)
-            }
-            else -> {
-                val redisURI: RedisURI = RedisURI.Builder.redis(redisProperties.host, redisProperties.port)
-                    .withTimeout(Duration.ofSeconds(60))
-                    .build()
-                if (redisProperties.password != null)
-                    redisURI.setPassword(redisProperties.password)
-                RedisClient.create(redisURI)
-            }
-        }
-
-
-    @Bean
-    fun abstractRedisClientConnection(redisClient: AbstractRedisClient): StatefulConnection<String, String> {
-        if (redisProperties.cluster != null) {
-            return (redisClient as RedisClusterClient).connect()
-        }
-        return (redisClient as RedisClient).connect()
-    }
-
-    @Bean
-    fun redisAsyncCommands(connection: StatefulConnection<String, String>): RedisClusterAsyncCommands<String, String> {
-        if (redisProperties.cluster != null) {
-            return (connection as StatefulRedisClusterConnection).async()
-        }
-        return (connection as StatefulRedisConnection).async()
-    }
-
-    @Bean(name = ["redisSearchClient"])
-    fun redisSearchClient(): RedissonClient? {
-        val config = Config()
-        when {
-            redisProperties.cluster != null -> {
-                config.useClusterServers()
-                    .addNodeAddress(*redisProperties.cluster.nodes.map { host -> "redis://$host" }.toTypedArray())
-                    //.setPassword("")
-                    .setTimeout(10_000)
-                    .setRetryAttempts(5)
-                    .setRetryInterval(500)
-                    .setMasterConnectionPoolSize(16)
-                    .setSlaveConnectionMinimumIdleSize(50)
-                    .setMasterConnectionMinimumIdleSize(4)
-                    .setCheckSlotsCoverage(false)
-                config.setThreads(4)
-                config.setNettyThreads(64)
-                config.setTransportMode(TransportMode.NIO)
-            }
-            else -> {
-                config.useSingleServer()
-                    .setAddress("redis://${redisProperties.host}:${redisProperties.port}")
-                    .setDatabase(0)
-                    .setClientName("RedisClient") // Bağlantı havuzu ayarları (Master ve Slave)
-                    .setTimeout(10_000)
-                    .setRetryAttempts(5)
-                    .setRetryInterval(500)
-                config.setNettyThreads(64)
-                config.setCodec(StringCodec(StandardCharsets.UTF_8))
-            }
-        }
-
-        return Redisson.create(config)
-    }
-}
-
-
 @Configuration
 class RedisConfig(private val redisProperties: RedisProperties) {
 
@@ -135,15 +53,41 @@ class RedisConfig(private val redisProperties: RedisProperties) {
     /**
      * Sealed class to represent Redis configuration types
      */
-    private sealed class RedisConfigType {
+    sealed class RedisConfigType {
         data class SingleServer(val host: String, val port: Int, val password: String?) : RedisConfigType()
         data class Cluster(val nodes: List<String>, val password: String?) : RedisConfigType()
     }
 
+    /*
+    @Bean
+    fun redisClusterClient(): AbstractRedisClient =
+        when {
+            redisProperties.cluster != null -> {
+                val redisURIs: MutableList<RedisURI> = mutableListOf()
+                redisProperties.cluster.nodes.forEach { node: String? ->
+                    redisURIs.add(element = RedisURI.Builder.redis(node)
+                        .withTimeout(Duration.ofSeconds(60))
+                        .withPassword(redisProperties.password)
+                        .build())
+                }
+                RedisClusterClient.create(redisURIs)
+            }
+            else -> {
+                val redisURI: RedisURI = RedisURI.Builder.redis(redisProperties.host, redisProperties.port)
+                    .withTimeout(Duration.ofSeconds(60))
+                    .build()
+                if (redisProperties.password != null)
+                    redisURI.setPassword(redisProperties.password)
+                RedisClient.create(redisURI)
+            }
+        }
+    */
+
     /**
      * Creates the appropriate Redis configuration based on properties
      */
-    private fun getRedisConfigType(): RedisConfigType = when {
+    @Bean
+    fun getRedisConfigType(): RedisConfigType = when {
         redisProperties.cluster?.nodes?.isNotEmpty() == true -> RedisConfigType.Cluster(
             nodes = redisProperties.cluster.nodes,
             password = redisProperties.password
@@ -156,57 +100,76 @@ class RedisConfig(private val redisProperties: RedisProperties) {
     }
 
     @Bean(destroyMethod = "shutdown")
-    fun redisClient(): AbstractRedisClient {
-        return when (val config = getRedisConfigType()) {
-            is RedisConfigType.SingleServer -> createSingleServerClient(config)
-            is RedisConfigType.Cluster -> createClusterClient(config)
+    fun redisClient(redisConfigType: RedisConfigType): AbstractRedisClient =
+        when (val config = redisConfigType) {
+            is RedisConfigType.SingleServer -> {
+                val redisURI = RedisURI.Builder
+                    .redis(config.host, config.port)
+                    .withTimeout(Duration.ofSeconds(60))
+                    .apply { config.password?.let { withPassword(it) } }
+                    .build()
+                RedisClient.create(redisURI)
+            }
+            is RedisConfigType.Cluster -> {
+                val redisURIs = config.nodes.map { node ->
+                    RedisURI.Builder
+                        .redis(node)
+                        .withTimeout(Duration.ofSeconds(60))
+                        .apply { config.password?.let { withPassword(it) } }
+                        .build()
+                }
+                RedisClusterClient.create(redisURIs)
+            }
         }
-    }
-
-    private fun createSingleServerClient(config: RedisConfigType.SingleServer): RedisClient {
-        val redisURI = RedisURI.Builder
-            .redis(config.host, config.port)
-            .withTimeout(Duration.ofSeconds(60))
-            .apply { config.password?.let { withPassword(it) } }
-            .build()
-        return RedisClient.create(redisURI)
-    }
-
-    private fun createClusterClient(config: RedisConfigType.Cluster): RedisClusterClient {
-        val redisURIs = config.nodes.map { node ->
-            RedisURI.Builder
-                .redis(node)
-                .withTimeout(Duration.ofSeconds(60))
-                .apply { config.password?.let { withPassword(it) } }
-                .build()
-        }
-        return RedisClusterClient.create(redisURIs)
-    }
 
     @Bean(destroyMethod = "close")
-    fun redisConnection(redisClient: AbstractRedisClient): StatefulConnection<String, String> {
-        return when (redisClient) {
+    fun redisConnection(redisClient: AbstractRedisClient): StatefulConnection<String, String> =
+        when (redisClient) {
             is RedisClusterClient -> redisClient.connect()
             is RedisClient -> redisClient.connect()
             else -> throw IllegalStateException("Unsupported Redis client type")
         }
-    }
 
     @Bean
-    fun redisAsyncCommands(connection: StatefulConnection<String, String>): RedisCommands {
-        return when (connection) {
+    fun redisAsyncCommands(connection: StatefulConnection<String, String>): RedisCommands =
+        when (connection) {
             is StatefulRedisClusterConnection -> RedisCommands.Cluster(connection.async())
             is StatefulRedisConnection -> RedisCommands.SingleServer(connection.async())
             else -> throw IllegalStateException("Unsupported connection type")
         }
-    }
 
     @Bean(name = ["redisSearchClient"], destroyMethod = "shutdown")
-    fun redisSearchClient(): RedissonClient {
+    fun redisSearchClient(redisConfigType: RedisConfigType): RedissonClient {
         val config = Config()
-        when (val redisConfig = getRedisConfigType()) {
-            is RedisConfigType.SingleServer -> config.applySingleServerConfig(redisConfig)
-            is RedisConfigType.Cluster -> config.applyClusterConfig(redisConfig)
+        config.setThreads(4)
+        config.setNettyThreads(64)
+        config.setTransportMode(TransportMode.NIO)
+        when (val redisConfig = redisConfigType) {
+            is RedisConfigType.SingleServer -> {
+                config.useSingleServer().apply {
+                    address = "redis://${redisConfig.host}:${redisConfig.port}"
+                    database = 0
+                    clientName = "RedisClient"
+                    timeout = 10_000
+                    retryAttempts = 5
+                    retryInterval = 500
+                    setPassword(redisConfig.password)
+                }
+                config.setCodec(StringCodec(StandardCharsets.UTF_8))
+            }
+            is RedisConfigType.Cluster -> {
+                config.useClusterServers().apply {
+                    addNodeAddress(*redisConfig.nodes.map { "redis://$it" }.toTypedArray())
+                    timeout = 10_000
+                    retryAttempts = 5
+                    retryInterval = 500
+                    masterConnectionPoolSize = 16
+                    slaveConnectionMinimumIdleSize = 50
+                    masterConnectionMinimumIdleSize = 4
+                    setCheckSlotsCoverage(false)
+                    setPassword(redisConfig.password)
+                }
+            }
         }
         return Redisson.create(config)
     }
@@ -238,39 +201,4 @@ class RedisConfig(private val redisProperties: RedisProperties) {
     fun jedisPooled(): JedisPooled =
         JedisPooled(ConnectionPoolConfig(), redisProperties.host, redisProperties.port, redisProperties.username,
             if(!redisProperties.password.isNullOrEmpty()) redisProperties.password else null)
-
-    private fun Config.applySingleServerConfig(config: RedisConfigType.SingleServer) {
-        useSingleServer().apply {
-            address = "redis://${config.host}:${config.port}"
-            database = 0
-            clientName = "RedisClient"
-            timeout = 10_000
-            retryAttempts = 5
-            retryInterval = 500
-            setPassword(config.password)
-        }
-        setCommonConfig()
-        setCodec(StringCodec(StandardCharsets.UTF_8))
-    }
-
-    private fun Config.applyClusterConfig(config: RedisConfigType.Cluster) {
-        useClusterServers().apply {
-            addNodeAddress(*config.nodes.map { "redis://$it" }.toTypedArray())
-            timeout = 10_000
-            retryAttempts = 5
-            retryInterval = 500
-            masterConnectionPoolSize = 16
-            slaveConnectionMinimumIdleSize = 50
-            masterConnectionMinimumIdleSize = 4
-            setCheckSlotsCoverage(false)
-            setPassword(config.password)
-        }
-        setCommonConfig()
-    }
-
-    private fun Config.setCommonConfig() {
-        setThreads(4)
-        setNettyThreads(64)
-        setTransportMode(TransportMode.NIO)
-    }
 }
