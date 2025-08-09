@@ -259,11 +259,13 @@ GET /api/redisearch?latitude=41.076&longitude=28.887&radius=5&type=jedis
 ```
 
 ### Combined Filters
-Search for high-traffic areas with specific speed ranges using redisson(aka lettuce):
+Search for high-traffic areas with specific speed ranges using Redisson:
 ```http request
 GET /api/redisearch?latitude=41.076&longitude=28.887&radius=10&minSpeed=30&maxSpeed=60&numberOfVehicles=50&type=lettuce
 ```
-Full examples can be found in the source code repository.
+Note: In this project, the query parameter `type` controls the client used by the endpoint. When `type=jedis`, the Jedis implementation is used. Any other value (including the default `lettuce`) routes to the Redisson implementation. The name `lettuce` here is historical and simply selects the Redisson path in our controller.
+
+Full examples can be found in src/main/resources/requests.http.
 
 ### Range Queries
 RediSearch supports sophisticated range queries:
@@ -396,22 +398,6 @@ config.useSingleServer().apply {
 - Monitor memory usage with Redis monitoring tools
 - Implement data archiving strategies for old records
 
-## Real-World Use Cases
-### 1. Location-Based Services
-- Restaurant recommendations within radius
-- Ride-sharing driver matching
-- Real estate property search
-
-### 2. E-commerce
-- Product search with filters
-- Price range queries
-- Inventory location search
-
-### 3. IoT and Monitoring
-- Sensor data analysis
-- Traffic monitoring (as in our example)
-- Environmental data search
-
 ## When to Choose What
 
 ### Choose Jedis When:
@@ -430,7 +416,14 @@ config.useSingleServer().apply {
 
 ## Problems
 ### `OFFSET exceeds maximum of 10000`
-`FT.CONFIG SET MAXSEARCHRESULTS 100000` or 0 to disable it all
+RediSearch module enforces a hard limit to prevent excessive memory usage. To fix it, you typically need to:
+
+- Use pagination with smaller offsets (e.g., keep OFFSET + LIMIT under 10,000)
+- Use WITHCURSOR / FT.CURSOR for large result sets so you can scroll through results efficiently.
+- Disable the limit by setting `MAXSEARCHRESULTS` to a higher value or 0, but this is not recommended for production environments.
+  - `FT.CONFIG SET MAXSEARCHRESULTS 100000` or 0 to disable it all
+
+It’s basically Redis telling you, “I won’t fetch results that far ahead in one go.”
 
 ### **Asynchronous Indexing**
 - RediSearch indexes data asynchronously. When you add large amounts of data quickly, the indexing process may lag behind data insertion.
