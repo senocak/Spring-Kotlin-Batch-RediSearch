@@ -81,6 +81,33 @@ implementation("org.redisson:redisson:3.45.1")
 ```
 Then, redis configuration should be set to match your Redis instance. You can use either Jedis or Redisson based on your preference.
 
+## Spring Data Redis @Indexed vs Redisearch Indexing
+### @Indexed Annotation
+The `@Indexed` annotation is used to mark fields that should be indexed by Spring Data Redis. This allows for efficient querying of these fields using Redis commands. However, it does not provide the advanced search capabilities that RediSearch offers, such as full-text search, geo-spatial queries, or complex filtering.
+
+- Maintains secondary indexes per property by writing Redis SETs keyed by `entity:field:value` that point to entity keys. 
+- Optimized for equality lookups; multi-criteria combine sets with SINTER. 
+- No native geo, full‑text, prefix, fuzzy, or numeric range indexes. 
+- Queries often degrade to scans for ranges/sorting; pagination is client‑side. 
+- Synchronous index updates on writes via Spring Data mapping → consistent immediately after save. 
+- Minimal infra (no modules), small runtime footprint, simple to use.
+- Choose @Indexed if you only need exact matches on a few fields, small/medium datasets, and minimal infra.
+
+### Redisearch Indexing
+RediSearch provides a powerful indexing engine that supports complex queries, including full-text search, geo-spatial queries, and numeric range filtering. It allows for more advanced search capabilities compared to the basic `@Indexed` annotation.
+
+- Module‑backed inverted indexes over HASH/JSON with field types: TEXT, NUMERIC, GEO, TAG. 
+- Native full‑text, numeric ranges, geo radius, tag filters, sort, projections, highlighting, aggregation. 
+- Server‑side query language (FT.SEARCH) with LIMIT/OFFSET, cursors, and scoring. 
+- Indexing is asynchronous → eventual consistency right after bulk inserts. 
+- Requires Redis Stack/RediSearch module; higher memory use but purpose‑built structures for search. 
+- Operational limits like OFFSET cap (10k) and cursor usage for deep pagination.
+- Choose RediSearch if you need geo, ranges, full‑text, sorting, projections, deep pagination, or large datasets.
+
+### Compare
+- RediSearch delivered sub‑30ms geo/range queries at scale and avoided heap pressure by doing server‑side filtering/pagination. 
+- Repository/RedisTemplate approaches slowed down and could hit OutOfMemoryError on large key scans.
+
 ## Setting Up RediSearch Indexes
 ### Redisson Implementation
 With Redisson, creating a RediSearch index is straightforward and type-safe:
